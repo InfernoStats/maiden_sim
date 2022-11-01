@@ -22,10 +22,16 @@ impl Plugin for CameraPlugin {
         app.add_plugin(LookTransformPlugin)
             .add_plugin(OrbitCameraPlugin::new(true))
             .add_system_set(SystemSet::on_enter(GameState::Playing).with_system(spawn_camera))
-            .add_system_set(SystemSet::on_update(GameState::Playing).with_system(follow_player))
-            .add_system_set(SystemSet::on_update(GameState::Playing).with_system(control_camera))
-            .add_system_set(SystemSet::on_update(GameState::Spawned).with_system(follow_player))
-            .add_system_set(SystemSet::on_update(GameState::Spawned).with_system(control_camera));
+            .add_system_set(
+                SystemSet::on_update(GameState::Playing)
+                    .with_system(follow_player)
+                    .with_system(control_camera),
+            )
+            .add_system_set(
+                SystemSet::on_update(GameState::Spawned)
+                    .with_system(follow_player)
+                    .with_system(control_camera),
+            );
     }
 }
 

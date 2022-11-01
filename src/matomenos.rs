@@ -20,6 +20,7 @@ pub struct CurrentSpawn {
     spawn_delay: Timer,
     spawns: Vec<SpawnPoint>,
     pub leaks: i32,
+    pub rerun: bool,
 }
 
 impl Default for CurrentSpawn {
@@ -30,6 +31,7 @@ impl Default for CurrentSpawn {
             spawn_delay: Timer::from_seconds(3.0, false),
             spawns: Vec::new(),
             leaks: 0,
+            rerun: false,
         }
     }
 }
@@ -38,14 +40,15 @@ impl Plugin for MatomenosPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CurrentSpawn>()
             .add_event::<NylocasClicked>()
-            .add_system_set(SystemSet::on_update(GameState::Spawned).with_system(spawn_nylos))
             .add_system_set(
-                SystemSet::new()
-                    .with_run_criteria(FixedTimestep::step(0.6))
-                    .with_system(move_nylos),
+                SystemSet::on_update(GameState::Spawned)
+                    .with_system(spawn_nylos)
+                    .with_system(NylocasClicked::handle_events),
             )
             .add_system_set(
-                SystemSet::on_update(GameState::Spawned).with_system(NylocasClicked::handle_events),
+                SystemSet::on_update(GameState::Spawned)
+                    .with_run_criteria(FixedTimestep::step(0.6))
+                    .with_system(move_nylos),
             )
             .add_system_set(SystemSet::on_resume(GameState::Playing).with_system(reset));
     }
@@ -65,17 +68,29 @@ fn spawn_nylos(
     }
 
     if current_spawn.spawn_delay.tick(time.delta()).finished() {
-        let spawn_points = generate_spawn_points(2 * config.players);
+        if !current_spawn.spawns.is_empty() {
+            for spawn_point in &current_spawn.spawns {
+                spawn_single_nylo(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    &models,
+                    *spawn_point,
+                );
+            }
+        } else {
+            let spawn_points = generate_spawn_points(2 * config.players);
 
-        for spawn_point in spawn_points {
-            current_spawn.spawns.push(spawn_point);
-            spawn_single_nylo(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &models,
-                spawn_point,
-            );
+            for spawn_point in spawn_points {
+                current_spawn.spawns.push(spawn_point);
+                spawn_single_nylo(
+                    &mut commands,
+                    &mut meshes,
+                    &mut materials,
+                    &models,
+                    spawn_point,
+                );
+            }
         }
 
         current_spawn.has_spawned = true;
@@ -188,9 +203,13 @@ pub fn reset(
     current_spawn.move_delay = true;
     current_spawn.has_spawned = false;
     current_spawn.spawn_delay.reset();
-    current_spawn.spawns.clear();
+
+    if !current_spawn.rerun {
+        current_spawn.spawns.clear();
+    }
 
     current_spawn.leaks = 0;
+    current_spawn.rerun = false;
 }
 
 struct NylocasClicked(Entity);
@@ -212,21 +231,17 @@ impl NylocasClicked {
         }
 
         for event in events.iter() {
-            if let Ok((transform, _)) = query.get_mut(event.0) {
-                let (target_x, target_y) = (transform.translation.x, transform.translation.z);
+            let (target_x, target_z) = match query.get(event.0) {
+                Ok((t, _)) => (t.translation.x, t.translation.z),
+                Err(_) => return,
+            };
 
-                // For every nylo on the map, search in a 3x3 area for positions next to the target
-                for (transform, mut matomenos) in query.iter_mut() {
-                    let (current_x, current_y) = (transform.translation.x, transform.translation.z);
-                    for i in -1..=1 {
-                        for j in -1..=1 {
-                            if current_x + i as f32 == target_x && current_y + j as f32 == target_y
-                            {
-                                matomenos.frozen = true;
-                                player.attack_delay = 5;
-                            }
-                        }
-                    }
+            // For every nylo on the map, search in a 3x3 area for positions next to the target
+            for (transform, mut matomenos) in query.iter_mut() {
+                let (x, z) = (transform.translation.x, transform.translation.z);
+                if f32::abs(target_x - x) <= 1.0 && f32::abs(target_z - z) <= 1.0 {
+                    matomenos.frozen = true;
+                    player.attack_delay = 5;
                 }
             }
         }

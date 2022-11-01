@@ -25,13 +25,14 @@ fn config_ui(
     mut egui_context: ResMut<EguiContext>,
     mut config: ResMut<Config>,
     mut state: ResMut<State<GameState>>,
-    current_spawn: Res<CurrentSpawn>,
+    mut current_spawn: ResMut<CurrentSpawn>,
 ) {
     egui::Window::new("Config").show(egui_context.ctx_mut(), |ui| {
         ui.add(egui::Slider::new(&mut config.players, 1..=5).text("Players"));
         ui.label(format!("Leaks: {}", current_spawn.leaks));
         ui.horizontal(|ui| {
             let spawn = ui.button("Spawn");
+            let rerun = ui.button("Rerun");
             let reset = ui.button("Reset");
             match state.current() {
                 GameState::Playing => {
@@ -41,6 +42,9 @@ fn config_ui(
                 }
                 GameState::Spawned => {
                     if reset.clicked() {
+                        state.pop().unwrap();
+                    } else if rerun.clicked() {
+                        current_spawn.rerun = true;
                         state.pop().unwrap();
                     }
                 }
