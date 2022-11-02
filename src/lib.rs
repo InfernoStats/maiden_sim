@@ -8,6 +8,7 @@ mod matomenos;
 mod menu;
 mod player;
 mod spawn_point;
+mod spell;
 
 use crate::actions::ActionsPlugin;
 use crate::camera::CameraPlugin;
@@ -18,6 +19,7 @@ use crate::map::MapPlugin;
 use crate::matomenos::MatomenosPlugin;
 use crate::menu::MenuPlugin;
 use crate::player::PlayerPlugin;
+use crate::spell::SpellPlugin;
 
 use bevy::app::App;
 #[cfg(debug_assertions)]
@@ -45,6 +47,7 @@ impl Plugin for GamePlugin {
             .add_plugin(ActionsPlugin)
             .add_plugin(PlayerPlugin)
             .add_plugin(MatomenosPlugin)
+            .add_plugin(SpellPlugin)
             .add_plugin(CameraPlugin);
 
         #[cfg(debug_assertions)]

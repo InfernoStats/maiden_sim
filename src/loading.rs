@@ -9,6 +9,7 @@ impl Plugin for LoadingPlugin {
         app.add_loading_state(
             LoadingState::new(GameState::Loading)
                 .with_collection::<FontAssets>()
+                .with_collection::<ImageAssets>()
                 .with_collection::<ModelAssets>()
                 .continue_to_state(GameState::Menu),
         );
@@ -31,4 +32,12 @@ pub struct ModelAssets {
 pub struct FontAssets {
     #[asset(path = "fonts/FiraSans-Bold.ttf")]
     pub fira_sans: Handle<Font>,
+}
+
+#[derive(AssetCollection)]
+pub struct ImageAssets {
+    #[asset(path = "images/ice_barrage.png")]
+    pub spell_sprite: Handle<Image>,
+    #[asset(path = "images/ice_barrage_selected.png")]
+    pub spell_selected_sprite: Handle<Image>,
 }

@@ -3,22 +3,34 @@ use crate::loading::ModelAssets;
 use crate::map::MAP_WIDTH;
 use crate::player::Player;
 use crate::spawn_point::{generate_spawn_points, SpawnPoint};
+use crate::spell::Spell;
 use crate::GameState;
 use bevy::{pbr::NotShadowCaster, prelude::*, time::FixedTimestep};
 use bevy_mod_picking::{highlight::InitialHighlight, prelude::*};
 
 pub struct MatomenosPlugin;
 
+enum FrozenState {
+    NotFrozen,
+    ShouldFreeze,
+    Frozen,
+}
+
 #[derive(Component)]
 pub struct Matomenos {
-    frozen: bool,
+    frozen: FrozenState,
+}
+
+enum ActionState {
+    NotSpawned,
+    Spawned,
+    Moving,
 }
 
 pub struct CurrentSpawn {
-    move_delay: bool,
-    has_spawned: bool,
     spawn_delay: Timer,
     spawns: Vec<SpawnPoint>,
+    state: ActionState,
     pub leaks: i32,
     pub rerun: bool,
 }
@@ -26,10 +38,9 @@ pub struct CurrentSpawn {
 impl Default for CurrentSpawn {
     fn default() -> CurrentSpawn {
         CurrentSpawn {
-            move_delay: true,
-            has_spawned: false,
             spawn_delay: Timer::from_seconds(3.0, false),
             spawns: Vec::new(),
+            state: ActionState::NotSpawned,
             leaks: 0,
             rerun: false,
         }
@@ -63,8 +74,9 @@ fn spawn_nylos(
     models: Res<ModelAssets>,
     config: ResMut<Config>,
 ) {
-    if current_spawn.has_spawned {
-        return;
+    match current_spawn.state {
+        ActionState::Spawned | ActionState::Moving => return,
+        ActionState::NotSpawned => (),
     }
 
     if current_spawn.spawn_delay.tick(time.delta()).finished() {
@@ -93,7 +105,7 @@ fn spawn_nylos(
             }
         }
 
-        current_spawn.has_spawned = true;
+        current_spawn.state = ActionState::Spawned;
     }
 }
 
@@ -123,7 +135,9 @@ fn spawn_single_nylo(
             selected: Some(materials.add(Color::NONE.into())),
         })
         .insert(Name::new("Matomenos"))
-        .insert(Matomenos { frozen: false })
+        .insert(Matomenos {
+            frozen: FrozenState::NotFrozen,
+        })
         .with_children(|commands| {
             commands.spawn_bundle(SceneBundle {
                 scene: models.matomenos_model.clone(),
@@ -141,22 +155,26 @@ fn spawn_single_nylo(
 
 fn move_nylos(
     mut commands: Commands,
-    mut query: Query<(Entity, &Matomenos, &mut Transform), With<Matomenos>>,
+    mut query: Query<(Entity, &mut Matomenos, &mut Transform), With<Matomenos>>,
     mut current_spawn: ResMut<CurrentSpawn>,
 ) {
-    if !current_spawn.has_spawned {
-        return;
-    }
-
-    if current_spawn.move_delay {
-        current_spawn.move_delay = false;
-        return;
-    }
-
-    for (entity, nylo, mut transform) in query.iter_mut() {
-        if nylo.frozen {
-            continue;
+    match current_spawn.state {
+        ActionState::NotSpawned => return,
+        ActionState::Spawned => {
+            current_spawn.state = ActionState::Moving;
+            return;
         }
+        ActionState::Moving => (),
+    }
+
+    for (entity, mut nylo, mut transform) in query.iter_mut() {
+        match nylo.frozen {
+            FrozenState::Frozen => continue,
+            FrozenState::ShouldFreeze => {
+                nylo.frozen = FrozenState::Frozen;
+            }
+            FrozenState::NotFrozen => {}
+        };
 
         // Distance to Maiden's Southwest Tile
         let distance_x = 1.5 - transform.translation.x;
@@ -200,8 +218,7 @@ pub fn reset(
         commands.entity(entity).despawn_recursive();
     }
 
-    current_spawn.move_delay = true;
-    current_spawn.has_spawned = false;
+    current_spawn.state = ActionState::NotSpawned;
     current_spawn.spawn_delay.reset();
 
     if !current_spawn.rerun {
@@ -221,27 +238,34 @@ impl ForwardedEvent<PointerClick> for NylocasClicked {
 impl NylocasClicked {
     fn handle_events(
         mut events: EventReader<NylocasClicked>,
-        mut player: Query<&mut Player, With<Player>>,
-        mut query: Query<(&Transform, &mut Matomenos), With<Matomenos>>,
-        current_spawn: Res<CurrentSpawn>,
+        mut nylos_query: Query<(&Transform, &mut Matomenos), With<Matomenos>>,
+        mut spell_query: Query<&mut Spell>,
+        mut player_query: Query<&mut Player, With<Player>>,
     ) {
-        let mut player = player.single_mut();
-        if current_spawn.move_delay || player.attack_delay != 0 {
+        let mut spell = spell_query.single_mut();
+        let mut player = player_query.single_mut();
+        if player.attack_delay != 0 || !spell.is_active {
             return;
         }
 
         for event in events.iter() {
-            let (target_x, target_z) = match query.get(event.0) {
+            let (target_x, target_z) = match nylos_query.get(event.0) {
                 Ok((t, _)) => (t.translation.x, t.translation.z),
-                Err(_) => return,
+                Err(_) => continue,
             };
 
             // For every nylo on the map, search in a 3x3 area for positions next to the target
-            for (transform, mut matomenos) in query.iter_mut() {
+            for (transform, mut matomenos) in nylos_query.iter_mut() {
+                match matomenos.frozen {
+                    FrozenState::NotFrozen => (),
+                    _ => continue,
+                }
+
                 let (x, z) = (transform.translation.x, transform.translation.z);
                 if f32::abs(target_x - x) <= 1.0 && f32::abs(target_z - z) <= 1.0 {
-                    matomenos.frozen = true;
+                    matomenos.frozen = FrozenState::ShouldFreeze;
                     player.attack_delay = 5;
+                    spell.is_active = false;
                 }
             }
         }
