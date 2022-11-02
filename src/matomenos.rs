@@ -19,7 +19,7 @@ enum FrozenState {
 #[derive(Component)]
 pub struct Matomenos {
     frozen: FrozenState,
-    color_timer: i32,
+    color_timer: Timer,
     color_handle: Handle<StandardMaterial>,
 }
 
@@ -134,7 +134,7 @@ fn spawn_single_nylo(
         .insert(Name::new("Matomenos"))
         .insert(Matomenos {
             frozen: FrozenState::NotFrozen,
-            color_timer: 4,
+            color_timer: Timer::from_seconds(4.0 * 0.6, false),
             color_handle: color_handle,
         })
         .with_children(|commands| {
@@ -168,10 +168,7 @@ fn move_nylos(
 
     for (entity, mut nylo, mut transform) in query.iter_mut() {
         match nylo.frozen {
-            FrozenState::Frozen => {
-                nylo.color_timer = std::cmp::max(0, nylo.color_timer - 1);
-                continue;
-            }
+            FrozenState::Frozen => continue,
             FrozenState::ShouldFreeze => {
                 nylo.frozen = FrozenState::Frozen;
             }
@@ -211,24 +208,28 @@ fn move_nylos(
     }
 }
 
-fn draw_freeze(mut query: Query<&Matomenos>, mut materials: ResMut<Assets<StandardMaterial>>) {
-    for nylo in query.iter_mut() {
+fn draw_freeze(
+    time: Res<Time>,
+    mut query: Query<&mut Matomenos>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for mut nylo in query.iter_mut() {
         match nylo.frozen {
             FrozenState::Frozen => {
-                if nylo.color_timer == 0 {
-                    continue;
-                } else if nylo.color_timer == 1 {
+                nylo.color_timer.tick(time.delta());
+                if nylo.color_timer.just_finished() {
                     let mut color_mat = materials.get_mut(&nylo.color_handle).unwrap();
                     color_mat.base_color = Color::NONE;
-                } else if nylo.color_timer > 1 {
-                    let mut color_mat = materials.get_mut(&nylo.color_handle).unwrap();
-                    color_mat.base_color =
-                        Color::rgba(1.0, 1.0, 1.0, nylo.color_timer as f32 / 4.0);
                 }
+                if nylo.color_timer.finished() {
+                    continue;
+                }
+                let mut color_mat = materials.get_mut(&nylo.color_handle).unwrap();
+                color_mat.base_color = Color::rgba(1.0, 1.0, 1.0, nylo.color_timer.percent_left());
             }
             FrozenState::ShouldFreeze => {
                 let mut color_mat = materials.get_mut(&nylo.color_handle).unwrap();
-                color_mat.base_color = Color::rgba(1.0, 1.0, 1.0, 1.0);
+                color_mat.base_color = Color::rgba(1.0, 1.0, 1.0, nylo.color_timer.percent_left());
             }
             FrozenState::NotFrozen => {}
         };
