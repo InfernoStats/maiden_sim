@@ -6,7 +6,7 @@ use crate::spawn_point::{generate_spawn_points, SpawnPoint};
 use crate::spell::Spell;
 use crate::GameState;
 use bevy::{pbr::NotShadowCaster, prelude::*, time::FixedTimestep};
-use bevy_mod_picking::{highlight::InitialHighlight, prelude::*};
+use bevy_mod_picking::prelude::*;
 
 pub struct MatomenosPlugin;
 
@@ -19,6 +19,8 @@ enum FrozenState {
 #[derive(Component)]
 pub struct Matomenos {
     frozen: FrozenState,
+    color_timer: i32,
+    color_handle: Handle<StandardMaterial>,
 }
 
 enum ActionState {
@@ -54,6 +56,7 @@ impl Plugin for MatomenosPlugin {
             .add_system_set(
                 SystemSet::on_update(GameState::Spawned)
                     .with_system(spawn_nylos)
+                    .with_system(draw_freeze)
                     .with_system(NylocasClicked::handle_events),
             )
             .add_system_set(
@@ -116,27 +119,23 @@ fn spawn_single_nylo(
     models: &Res<ModelAssets>,
     spawn: SpawnPoint,
 ) {
+    let color_handle = materials.add(Color::NONE.into());
+
     commands
         .spawn_bundle(SpatialBundle::from_transform(Transform::from_xyz(
             spawn.x, 0.75, spawn.y,
         )))
         .insert(meshes.add(shape::Cube { size: 1.75 }.into()))
-        .insert(materials.add(Color::NONE.into()))
+        .insert(color_handle.clone())
         .insert(NotShadowCaster)
         .insert(PickRaycastTarget::default())
         .insert_bundle(PickableBundle::default())
         .forward_events::<PointerClick, NylocasClicked>()
-        .insert(InitialHighlight {
-            initial: materials.add(Color::NONE.into()),
-        })
-        .insert(HighlightOverride {
-            hovered: Some(materials.add(Color::NONE.into())),
-            pressed: Some(materials.add(Color::NONE.into())),
-            selected: Some(materials.add(Color::NONE.into())),
-        })
         .insert(Name::new("Matomenos"))
         .insert(Matomenos {
             frozen: FrozenState::NotFrozen,
+            color_timer: 4,
+            color_handle: color_handle,
         })
         .with_children(|commands| {
             commands.spawn_bundle(SceneBundle {
@@ -169,7 +168,10 @@ fn move_nylos(
 
     for (entity, mut nylo, mut transform) in query.iter_mut() {
         match nylo.frozen {
-            FrozenState::Frozen => continue,
+            FrozenState::Frozen => {
+                nylo.color_timer = std::cmp::max(0, nylo.color_timer - 1);
+                continue;
+            }
             FrozenState::ShouldFreeze => {
                 nylo.frozen = FrozenState::Frozen;
             }
@@ -209,7 +211,31 @@ fn move_nylos(
     }
 }
 
-pub fn reset(
+fn draw_freeze(mut query: Query<&Matomenos>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    for nylo in query.iter_mut() {
+        match nylo.frozen {
+            FrozenState::Frozen => {
+                if nylo.color_timer == 0 {
+                    continue;
+                } else if nylo.color_timer == 1 {
+                    let mut color_mat = materials.get_mut(&nylo.color_handle).unwrap();
+                    color_mat.base_color = Color::NONE;
+                } else if nylo.color_timer > 1 {
+                    let mut color_mat = materials.get_mut(&nylo.color_handle).unwrap();
+                    color_mat.base_color =
+                        Color::rgba(1.0, 1.0, 1.0, nylo.color_timer as f32 / 4.0);
+                }
+            }
+            FrozenState::ShouldFreeze => {
+                let mut color_mat = materials.get_mut(&nylo.color_handle).unwrap();
+                color_mat.base_color = Color::rgba(1.0, 1.0, 1.0, 1.0);
+            }
+            FrozenState::NotFrozen => {}
+        };
+    }
+}
+
+fn reset(
     mut commands: Commands,
     mut matomenos: Query<Entity, With<Matomenos>>,
     mut current_spawn: ResMut<CurrentSpawn>,

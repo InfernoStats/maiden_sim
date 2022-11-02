@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use bevy::prelude::{AmbientLight, App, ClearColor, Color, NonSend, WindowDescriptor};
+use bevy::prelude::{
+    AmbientLight, App, ClearColor, Color, NonSend, StandardMaterial, WindowDescriptor,
+};
 use bevy::window::WindowId;
 use bevy::winit::WinitWindows;
 use bevy::DefaultPlugins;
@@ -28,7 +30,9 @@ fn main() {
             brightness: 0.8 / 1.0f32,
         })
         .add_plugins(DefaultPlugins)
-        .add_plugins(DefaultPickingPlugins::build(RaycastBackend))
+        .add_plugins_with(DefaultPickingPlugins::build(RaycastBackend), |group| {
+            group.disable::<CustomHighlightingPlugin<StandardMaterial>>()
+        })
         .add_plugin(EguiPlugin)
         .add_plugin(GamePlugin)
         .add_startup_system(set_window_icon)
